@@ -1,16 +1,16 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Prosty szablon do uruchomienia Kontrolera Aviatrix"
+Description: "A simple template to run the Aviatrix Controller"
 
 Parameters:
   VPCParam:
     Type: AWS::EC2::VPC::Id
-    Description: "Wybierz VPC, w którym ma być wdrożony Kontroler Aviatrix."
+    Description: "Select the VPC in which the Aviatrix Controller is to be deployed."
   SubnetParam:
     Type: AWS::EC2::Subnet::Id
-    Description: "Wybierz publiczną podsieć w wybranym VPC. Kontroler potrzebuje dostępu do internetu."
+    Description: "Select a public subnet on the selected VPC. The controller needs internet access."
   AllowedHttpsIngressIpParam:
     Type: String
-    Description: "Podaj adres IP (CIDR), z którego będzie dozwolony dostęp HTTPS (port 443) do Kontrolera. Zmień domyślną wartość!"
+    Description: "Specify the IP address (CIDR) from which HTTPS access (port 443) to the Controller will be allowed. Change the default value!"
     Default: "1.2.3.4/32" 
   InstanceTypeParam:
     Type: String
@@ -20,7 +20,7 @@ Parameters:
       - "t3.xlarge"
       - "c5.large"
       - "c5.xlarge"
-    Description: "Wybierz rozmiar instancji dla Kontrolera. Domyślnie t3.large."
+    Description: "Select the instance size for the Controller. Default is t3.large."
 
 Mappings:
   RegionMap:
@@ -81,7 +81,7 @@ Resources:
     Type: AWS::IAM::ManagedPolicy
     Properties:
       ManagedPolicyName: "aviatrix-assume-role-policy"
-      Description: "Polityka pozwalająca roli EC2 przyjmować inne role Aviatrix."
+      Description: "Policy that allows EC2 roles to accept other Aviatrix roles."
       Path: "/"
       PolicyDocument:
         Version: "2012-10-17"
@@ -99,7 +99,7 @@ Resources:
     Type: AWS::IAM::ManagedPolicy
     Properties:
       ManagedPolicyName: "aviatrix-app-policy"
-      Description: "Polityka nadająca uprawnienia aplikacji Aviatrix."
+      Description: "Policy that grants permissions to Aviatrix applications"
       Path: "/"
       PolicyDocument:
         Version: "2012-10-17"
@@ -315,14 +315,14 @@ Resources:
 
 Outputs:
   AccountId:
-    Description: "ID Konta AWS"
+    Description: "AWS Account ID"
     Value: !Ref "AWS::AccountId"
   AviatrixControllerEIP:
-    Description: "Publiczny adres IP Kontrolera Aviatrix"
+    Description: "Aviatrix Controller Public IP Address"
     Value: !Ref AviatrixEIP 
   AviatrixControllerPrivateIP:
-    Description: "Prywatny adres IP Kontrolera Aviatrix"
+    Description: "Aviatrix Controller Private IP Address"
     Value: !GetAtt [AviatrixController, PrivateIp]
   AccessUrl:
-    Description: "URL dostępu do Kontrolera Aviatrix (użyj HTTPS)"
+    Description: "Aviatrix Controller Access URL (use HTTPS)"
     Value: !Sub "https://${AviatrixEIP}/"
