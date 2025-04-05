@@ -1,0 +1,328 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Prosty szablon do uruchomienia Kontrolera Aviatrix"
+
+Parameters:
+  VPCParam:
+    Type: AWS::EC2::VPC::Id
+    Description: "Wybierz VPC, w którym ma być wdrożony Kontroler Aviatrix."
+  SubnetParam:
+    Type: AWS::EC2::Subnet::Id
+    Description: "Wybierz publiczną podsieć w wybranym VPC. Kontroler potrzebuje dostępu do internetu."
+  AllowedHttpsIngressIpParam:
+    Type: String
+    Description: "Podaj adres IP (CIDR), z którego będzie dozwolony dostęp HTTPS (port 443) do Kontrolera. Zmień domyślną wartość!"
+    Default: "1.2.3.4/32" 
+  InstanceTypeParam:
+    Type: String
+    Default: "t3.large"
+    AllowedValues:
+      - "t3.large"
+      - "t3.xlarge"
+      - "c5.large"
+      - "c5.xlarge"
+    Description: "Wybierz rozmiar instancji dla Kontrolera. Domyślnie t3.large."
+
+Mappings:
+  RegionMap:
+
+    us-east-1: { "Name": "ami-03c5c2226878f03c4" }
+    us-gov-east-1: { "Name": "ami-0eca8c31aa354988b" }
+    us-gov-west-1: { "Name": "ami-0961859c1f17d2321" }
+    us-east-2: { "Name": "ami-0acedd29dab20cc5a" }
+    us-west-1: { "Name": "ami-08bddc6d2c4743e08" }
+    us-west-2: { "Name": "ami-07589d8f6f9df39a3" }
+    ca-central-1: { "Name": "ami-066d9e51da6575698" }
+    eu-central-1: { "Name": "ami-0df4b7dd07ca5a85b" }
+    eu-west-1: { "Name": "ami-0292c023568445ff0" }
+    eu-west-2: { "Name": "ami-009f45004487589fd" }
+    eu-west-3: { "Name": "ami-0eddef65825d7c1f7" }
+    eu-north-1: { "Name": "ami-080b59777d2471220" }
+    eu-south-1: { "Name": "ami-0967010ee1ae2ff24" }
+    ap-east-1: { "Name": "ami-06566c7298b19784a" }
+    ap-southeast-1: { "Name": "ami-021b816de63d532a0" }
+    ap-southeast-2: { "Name": "ami-01310952d47fb2db7" }
+    ap-southeast-3: { "Name": "ami-01a27f6091c2e1e8e" }
+    ap-south-1: { "Name": "ami-0b9f3c76193b82ef2" }
+    ap-northeast-1: { "Name": "ami-08e2eb00ef2cdc3e8" }
+    ap-northeast-2: { "Name": "ami-0379d9fa2ddcec135" }
+    ap-northeast-3: { "Name": "ami-0330539f19a42d89d" }
+    sa-east-1: { "Name": "ami-052d101930a7a14f5" }
+    me-south-1: { "Name": "ami-0a489770467eb83ba" }
+    af-south-1: { "Name": "ami-0ce3c6a5aba120b62" }
+
+Resources:
+
+  AviatrixRoleEC2:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "aviatrix-role-ec2"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ["ec2.amazonaws.com"] }
+            Action: ["sts:AssumeRole"]
+      Path: "/"
+
+  AviatrixRoleApp:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "aviatrix-role-app"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+            Action: ["sts:AssumeRole"]
+      Path: "/"
+
+  CreateAviatrixAssumeRolePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: "aviatrix-assume-role-policy"
+      Description: "Polityka pozwalająca roli EC2 przyjmować inne role Aviatrix."
+      Path: "/"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: ["sts:AssumeRole"]
+            Resource: !Sub "arn:${AWS::Partition}:iam::*:role/aviatrix-*"
+          - Effect: Allow
+            Action: ["aws-marketplace:MeterUsage", "s3:GetBucketLocation"]
+            Resource: "*"
+      Roles:
+        - !Ref AviatrixRoleEC2
+
+  CreateAviatrixAppPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: "aviatrix-app-policy"
+      Description: "Polityka nadająca uprawnienia aplikacji Aviatrix."
+      Path: "/"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # Read-only actions
+          - Effect: Allow
+            Action:
+              - "ec2:Describe*"
+              - "ec2:Get*"
+              - "ec2:Search*"
+              - "elasticloadbalancing:Describe*"
+              - "route53:List*"
+              - "route53:Get*"
+              - "sqs:Get*"
+              - "sqs:List*"
+              - "sns:List*"
+              - "s3:List*"
+              - "s3:Get*"
+              - "iam:List*"
+              - "iam:Get*"
+              - "directconnect:Describe*"
+              - "guardduty:Get*"
+              - "guardduty:List*"
+              - "ram:Get*"
+              - "ram:List*"
+              - "networkmanager:Get*"
+              - "networkmanager:List*"
+            Resource: "*"
+          # Basic EC2 write actions
+          - Effect: Allow
+            Action:
+              - "ec2:CreateVpc"
+              - "ec2:DeleteVpc"
+              - "ec2:ModifyVpcAttribute"
+              - "ec2:CreateNetworkAclEntry"
+              - "ec2:ReplaceNetworkAclEntry"
+              - "ec2:DeleteNetworkAclEntry"
+              - "ec2:AssociateVpcCidrBlock"
+              - "ec2:AssociateSubnetCidrBlock"
+              - "ec2:CreateSubnet"
+              - "ec2:DeleteSubnet"
+              - "ec2:ModifySubnetAttribute"
+              - "ec2:*InternetGateway*"
+              - "ec2:*Route*"
+              - "ec2:*Instance*"
+              - "ec2:*SecurityGroup*"
+              - "ec2:*Address*"
+              - "ec2:*NetworkInterface*"
+              - "ec2:CreateKeyPair"
+              - "ec2:DeleteKeyPair"
+              - "ec2:CreateTags"
+              - "ec2:DeleteTags"
+            Resource: "*"
+          # VPN, Peering, VGW actions
+          - Effect: Allow
+            Action:
+              - "ec2:CreateCustomerGateway"
+              - "ec2:DeleteCustomerGateway"
+              - "ec2:CreateVpnConnection"
+              - "ec2:DeleteVpnConnection"
+              - "ec2:CreateVpcPeeringConnection"
+              - "ec2:AcceptVpcPeeringConnection"
+              - "ec2:DeleteVpcPeeringConnection"
+              - "ec2:EnableVgwRoutePropagation"
+              - "ec2:DisableVgwRoutePropagation"
+            Resource: "*"
+          # Transit Gateway actions
+          - Effect: Allow
+            Action:
+              - "ec2:AssociateTransitGatewayRouteTable"
+              - "ec2:AcceptTransitGatewayVpcAttachment"
+              - "ec2:CreateTransitGateway"
+              - "ec2:CreateTransitGatewayRoute"
+              - "ec2:CreateTransitGatewayRouteTable"
+              - "ec2:CreateTransitGatewayVpcAttachment"
+              - "ec2:DeleteTransitGateway"
+              - "ec2:DeleteTransitGatewayRoute"
+              - "ec2:DeleteTransitGatewayRouteTable"
+              - "ec2:DeleteTransitGatewayVpcAttachment"
+              - "ec2:DisableTransitGatewayRouteTablePropagation"
+              - "ec2:DisassociateTransitGatewayRouteTable"
+              - "ec2:EnableTransitGatewayRouteTablePropagation"
+              - "ec2:ExportTransitGatewayRoutes"
+              - "ec2:ModifyTransitGatewayVpcAttachment"
+              - "ec2:RejectTransitGatewayVpcAttachment"
+              - "ec2:ReplaceTransitGatewayRoute"
+              - "ec2:EnableRoutePropagation"
+            Resource: "*"
+          # RAM actions
+          - Effect: Allow
+            Action:
+              - "ram:CreateResourceShare"
+              - "ram:DeleteResourceShare"
+              - "ram:UpdateResourceShare"
+              - "ram:AssociateResourceShare"
+              - "ram:DisassociateResourceShare"
+              - "ram:TagResource"
+              - "ram:UntagResource"
+              - "ram:AcceptResourceShareInvitation"
+              - "ram:EnableSharingWithAwsOrganization"
+            Resource: "*"
+          # Direct Connect Gateway actions
+          - Effect: Allow
+            Action:
+              - "directconnect:CreateDirectConnectGateway"
+              - "directconnect:CreateDirectConnectGatewayAssociation"
+              - "directconnect:CreateDirectConnectGatewayAssociationProposal"
+              - "directconnect:DeleteDirectConnectGateway"
+              - "directconnect:DeleteDirectConnectGatewayAssociation"
+              - "directconnect:DeleteDirectConnectGatewayAssociationProposal"
+              - "directconnect:AcceptDirectConnectGatewayAssociationProposal"
+            Resource: "*"
+          # SQS actions
+          - Effect: Allow
+            Action: ["sqs:*"] 
+            Resource: "*"
+          # S3 actions
+          - Effect: Allow
+            Action:
+              - "s3:CreateBucket"
+              - "s3:DeleteBucket"
+              - "s3:ListBucket"
+              - "s3:PutObject"
+              - "s3:DeleteObject"
+            Resource: "*"
+          # IAM PassRole and Instance Profile actions
+          - Effect: Allow
+            Action:
+              - "iam:PassRole"
+              - "iam:AddRoleToInstanceProfile"
+              - "iam:CreateInstanceProfile"
+              - "iam:DeleteInstanceProfile"
+              - "iam:RemoveRoleFromInstanceProfile"
+              - "iam:CreateServiceLinkedRole"
+            Resource: "*"
+          # IAM Policy Version actions
+          - Effect: Allow
+            Action:
+              - "iam:DeletePolicyVersion"
+              - "iam:CreatePolicyVersion"
+            Resource: "*"
+          # Other necessary actions
+          - Effect: Allow
+            Action:
+              - "elasticloadbalancing:*"
+              - "route53:ChangeResourceRecordSets"
+              - "ec2:*Volume*"
+              - "ec2:*Snapshot*"
+              - "ec2:*TransitGatewayPeeringAttachment"
+              - "guardduty:*"
+              - "globalaccelerator:*"
+              - "networkmanager:*"
+            Resource: "*"
+      Roles:
+        - !Ref AviatrixRoleApp
+
+  AviatrixInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      InstanceProfileName: "aviatrix-role-ec2" 
+      Roles:
+        - !Ref AviatrixRoleEC2
+
+  
+  AviatrixSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Security group for Aviatrix Controller - HTTPS access"
+      VpcId: !Ref VPCParam
+      SecurityGroupIngress:
+        - IpProtocol: "tcp"
+          CidrIp: !Ref AllowedHttpsIngressIpParam
+          FromPort: 443
+          ToPort: 443
+      Tags:
+        - Key: Name
+          Value: "AviatrixControllerSG-Simple"
+
+  AviatrixController:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", Name]
+      InstanceType: !Ref InstanceTypeParam
+      IamInstanceProfile: "aviatrix-role-ec2" 
+      NetworkInterfaces:
+        - DeviceIndex: "0"
+          GroupSet: [!Ref AviatrixSG]
+          SubnetId: !Ref SubnetParam
+          AssociatePublicIpAddress: false 
+      BlockDeviceMappings:
+        - DeviceName: "/dev/sda1"
+          Ebs: { VolumeSize: "64", VolumeType: "gp2", Encrypted: "true" }
+      DisableApiTermination: "true"
+      UserData: 
+        Fn::Base64: |
+          #!/bin/bash -ex
+          sudo service ssh stop
+      Tags:
+        - Key: Name
+          Value: "AviatrixController-Simple"
+        - Key: Project
+          Value: "Aviatrix"
+
+  AviatrixEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      InstanceId: !Ref AviatrixController
+      Domain: "vpc"
+      Tags:
+        - Key: Name
+          Value: "AviatrixControllerEIP-Simple"
+
+Outputs:
+  AccountId:
+    Description: "ID Konta AWS"
+    Value: !Ref "AWS::AccountId"
+  AviatrixControllerEIP:
+    Description: "Publiczny adres IP Kontrolera Aviatrix"
+    Value: !Ref AviatrixEIP 
+  AviatrixControllerPrivateIP:
+    Description: "Prywatny adres IP Kontrolera Aviatrix"
+    Value: !GetAtt [AviatrixController, PrivateIp]
+  AccessUrl:
+    Description: "URL dostępu do Kontrolera Aviatrix (użyj HTTPS)"
+    Value: !Sub "https://${AviatrixEIP}/"
